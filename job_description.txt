@@ -1,0 +1,14 @@
+
+RequirementsJob Title: Junior Python Developer
+Role Overview:
+We are looking for a motivated Junior Python Developer to join our engineering team. You will be responsible for writing and maintaining efficient code and helping us automate our data workflows.
+Required Technical Skills:
+• Python: Strong proficiency in writing clean, readable code.
+• Data Analysis: Experience using Pandas and NumPy to manipulate data.
+• Web Frameworks: Basic understanding of Flask or Django.
+• Version Control: Familiarity with Git and GitHub.
+• Machine Learning: A basic understanding of Scikit-Learn is a plus.
+Soft Skills:
+• Problem-solving mindset and attention to detail.
+• Ability to work in an agile team environment.
+• Strong communication skills.
