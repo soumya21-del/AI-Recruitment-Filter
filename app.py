@@ -1,123 +1,87 @@
 import streamlit as st
-import PyPDF2
 import spacy
+import PyPDF2
 import re
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Load NLP Engine
+# 1. Page Config
+st.set_page_config(page_title="AI Recruiter Pro", page_icon="👔", layout="wide")
+
 @st.cache_resource
 def load_nlp():
     return spacy.load("en_core_web_md")
 
 nlp = load_nlp()
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="TalentForce AI Pro", layout="wide", page_icon="🎯")
+# 2. Extraction Functions (Role, Experience, Education)
+def extract_text(file):
+    pdf_reader = PyPDF2.PdfReader(file)
+    return " ".join([page.extract_text() for page in pdf_reader.pages])
 
-# Custom Styling
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; }
-    .stAlert { border-radius: 10px; }
-    .reportview-container .main .block-container { padding-top: 2rem; }
-    </style>
-    """, unsafe_allow_html=True)
+def get_experience(text):
+    exp_pattern = r"(\d+(?:\+)?\s*(?:years?|yrs?))"
+    matches = re.findall(exp_pattern, text, re.IGNORECASE)
+    return matches[0] if matches else "0-1 Years"
 
-st.title("🎯 TalentForce AI: The Professional Recruitment Suite")
+def get_education(text):
+    edu_keywords = ["B.Tech", "M.Tech", "BCA", "MCA", "B.E", "BSc", "MSc", "MBA", "PhD", "Bachelor", "Master"]
+    for word in edu_keywords:
+        if word.lower() in text.lower():
+            return word
+    return "Undergraduate"
+
+def get_job_role(text):
+    lines = [line.strip() for line in text.split('\n') if len(line.strip()) > 5]
+    return lines[0] if lines else "Software Engineer"
+
+# 3. UI Design
+st.title("👔 AI Recruiter Pro: Smart Batch Screening")
 st.markdown("---")
 
-# --- SIDEBAR: RECRUITER CONFIGURATION ---
-st.sidebar.header("📋 Job Requirements")
-job_title = st.sidebar.text_input("Job Title", "e.g. Senior Marketing Executive")
+col1, col2 = st.columns([1, 2])
 
-# Inclusive Education Options
-degree_options = ["Not Specified", "High School", "Diploma", "B.A.", "B.Com", "B.Sc", "B.Tech/B.E.", "BCA", "BBA", "M.A.", "M.Sc", "M.Tech", "MBA", "MCA", "PhD"]
-req_degree = st.sidebar.selectbox("Minimum Education Required", degree_options)
+with col1:
+    st.header("📋 Job Requirements")
+    jd_input = st.text_area("Paste Job Description Here", height=300)
 
-# Experience Filter
-min_exp = st.sidebar.slider("Minimum Years of Experience", 0, 15, 2)
-
-# Professional Job Description
-jd_input = st.sidebar.text_area("Detailed Job Description:", height=250, 
-                                placeholder="Paste the full job post here including responsibilities and skills...")
-
-# --- MAIN INTERFACE: CANDIDATE ANALYSIS ---
-uploaded_file = st.file_uploader("📤 Upload Candidate Resume (PDF)", type="pdf")
-
-if uploaded_file and jd_input:
-    with st.spinner("Deep-scanning candidate profile..."):
-        # 1. TEXT EXTRACTION
-        reader = PyPDF2.PdfReader(uploaded_file)
-        resume_text = " ".join([p.extract_text() for p in reader.pages])
-
-        # 2. SEMANTIC ANALYSIS
-        jd_doc = nlp(jd_input)
-        res_doc = nlp(resume_text)
-        match_score = round(jd_doc.similarity(res_doc) * 100, 2)
-
-        # 3. YEARS OF EXPERIENCE EXTRACTION (Regex)
-        exp_matches = re.findall(r'(\d+)\s*(?:years?|yrs?|yr)\s*(?:of)?\s*exp', resume_text.lower())
-        years_found = int(exp_matches[0]) if exp_matches else 0
-        
-        # 4. EDUCATION VALIDATION
-        edu_match = True if req_degree == "Not Specified" else req_degree.lower() in resume_text.lower()
-
-        # 5. KEYWORD GAP ANALYSIS
-        jd_keywords = set([t.text.lower() for t in jd_doc if t.pos_ in ["NOUN", "PROPN"] and not t.is_stop])
-        res_keywords = set([t.text.lower() for t in res_doc if t.pos_ in ["NOUN", "PROPN"]])
-        missing = list(jd_keywords - res_keywords)
-
-        # --- UI DISPLAY: THE SCORECARD ---
-        st.header(f"Candidate Analysis: {uploaded_file.name}")
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("AI Compatibility", f"{match_score}%")
-        with c2:
-            st.metric("Exp. Detected", f"{years_found} Years")
-        with c3:
-            status = "✅ Met" if edu_match else "❌ Missing"
-            st.metric("Education", status)
-
-        st.divider()
-
-        # --- DETAILED FEEDBACK SECTION ---
-        col_a, col_b = st.columns([1, 1])
-
-        with col_a:
-            st.subheader("🕵️ Recruiter's Audit")
+with col2:
+    st.header("📤 Upload Candidate CVs")
+    uploaded_files = st.file_uploader("Upload multiple PDFs", type="pdf", accept_multiple_files=True)
+    
+    if st.button("🚀 Analyze All Candidates") and uploaded_files and jd_input:
+        results = []
+        for file in uploaded_files:
+            raw_text = extract_text(file)
+            experience = get_experience(raw_text)
+            education = get_education(raw_text)
+            role = get_job_role(raw_text)
             
-            # Detailed Logic-based Advice
-            if match_score > 70 and years_found >= min_exp and edu_match:
-                st.success("**VERDICT: HIGH PRIORITY CANDIDATE**")
-                st.write(f"This candidate is a strong match for the **{job_title}** role. Their professional vocabulary aligns perfectly with your requirements.")
-            elif match_score > 50:
-                st.warning("**VERDICT: POTENTIAL MATCH (Needs Review)**")
-                st.write("The candidate has the right background but may lack specific technical keywords or the required seniority level.")
-            else:
-                st.error("**VERDICT: NOT RECOMMENDED**")
-                st.write("Significant gaps found between the candidate's resume and the job description requirements.")
+            vectorizer = TfidfVectorizer()
+            vectors = vectorizer.fit_transform([jd_input, raw_text])
+            score = round(cosine_similarity(vectors[0:1], vectors[1:2])[0][0] * 100, 1)
+            
+            jd_doc = nlp(jd_input.lower())
+            res_doc = nlp(raw_text.lower())
+            jd_skills = set([t.text for t in jd_doc if t.pos_ in ["NOUN", "PROPN"] and not t.is_stop])
+            res_skills = set([t.text for t in res_doc if t.pos_ in ["NOUN", "PROPN"]])
+            missing = list(jd_skills - res_skills)[:3]
 
-        with col_b:
-            st.subheader("🛠️ Actionable Improvement Plan")
-            st.write("To improve the selection probability, the candidate should:")
-            if not edu_match:
-                st.info(f"👉 Explicitly list the **{req_degree}** degree in the Education section.")
-            if years_found < min_exp:
-                st.info(f"👉 Highlight relevant projects to compensate for the **{min_exp - years_found} year(s)** experience gap.")
-            if missing:
-                st.write("**Include these missing keywords:**")
-                st.caption(", ".join([m.capitalize() for m in missing[:15]]))
+            results.append({
+                "Candidate": file.name,
+                "Current Role": role,
+                "Experience": experience,
+                "Education": education,
+                "Match Score (%)": score,
+                "Missing Skills": ", ".join(missing) if score < 80 else "Skills Match!"
+            })
 
-        # --- DATA VISUALIZATION ---
-        st.markdown("### 📈 Competency Map")
-        chart_data = pd.DataFrame({
-            'Category': ['AI Match', 'Experience', 'Education'],
-            'Score': [match_score, (years_found/min_exp)*100 if min_exp > 0 else 100, 100 if edu_match else 0]
-        })
-        st.bar_chart(data=chart_data, x='Category', y='Score')
+        df = pd.DataFrame(results).sort_values(by="Match Score (%)", ascending=False)
+        st.markdown("### 📊 Screening Dashboard")
+        # Fixed the width setting here to stop the terminal error
+        st.dataframe(df, width=1200, hide_index=True)
+        st.download_button("📥 Download Report", df.to_csv(index=False), "screening_report.csv")
 
-else:
-    st.info("👋 Welcome! Set your hiring rules in the sidebar and upload a resume to start the deep analysis.")
-
+    elif not jd_input or not uploaded_files:
+        st.info("💡 Paste a Job Description and upload CVs to begin.")
